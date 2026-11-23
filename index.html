@@ -31,10 +31,14 @@
   header {
     position: sticky; top: 0; z-index: 5; background: var(--bg);
     padding: calc(env(safe-area-inset-top) + 14px) 18px 10px;
-    display: flex; align-items: baseline; justify-content: space-between;
+    display: flex; align-items: center; justify-content: space-between;
   }
   h1 { margin: 0; font-size: 28px; letter-spacing: -0.02em; }
   #count { color: var(--muted); font-size: 15px; }
+  .head-right { display: flex; align-items: center; gap: 10px; }
+  #langBtn { border: 1px solid var(--line); background: var(--card); border-radius: 999px;
+    width: 40px; height: 40px; padding: 0; font-size: 22px; line-height: 1; display: grid; place-items: center; }
+  #langBtn:active { background: var(--line); }
 
   main { padding: 0 14px calc(env(safe-area-inset-bottom) + 110px); max-width: 640px; margin: 0 auto; }
 
@@ -145,37 +149,41 @@
 <body>
 
 <header>
-  <h1>Handleliste</h1>
-  <span id="count"></span>
+  <h1 data-i18n="title">Handleliste</h1>
+  <div class="head-right">
+    <span id="count"></span>
+    <button id="langBtn" type="button"></button>
+  </div>
 </header>
 
 <main>
   <form id="addForm" autocomplete="off">
-    <input id="addInput" placeholder="Legg til vare…" enterkeyhint="done" aria-label="Ny vare">
-    <button type="submit">Legg til</button>
+    <input id="addInput" placeholder="Legg til vare…" enterkeyhint="done" aria-label="Ny vare"
+           data-i18n-placeholder="addPlaceholder" data-i18n-aria="addAria">
+    <button type="submit" data-i18n="add">Legg til</button>
   </form>
 
   <ul id="list"></ul>
-  <p id="empty">Listen er tom.<br>Skann en strekkode eller skriv inn en vare.</p>
-  <button id="clearDone" hidden>Fjern avkryssede</button>
+  <p id="empty"><span data-i18n="empty1">Listen er tom.</span><br><span data-i18n="empty2">Skann en strekkode eller skriv inn en vare.</span></p>
+  <button id="clearDone" hidden data-i18n="clearDone">Fjern avkryssede</button>
 </main>
 
-<button id="scanBtn" class="fab" aria-label="Skann strekkode">
+<button id="scanBtn" class="fab" aria-label="Skann strekkode" data-i18n-aria="scanAria">
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
     <path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/>
     <path d="M7 8v8M10 8v8M13 8v8M17 8v8"/>
   </svg>
-  Skann vare
+  <span data-i18n="scan">Skann vare</span>
 </button>
 
 <div id="scanner" hidden>
   <video id="video" playsinline muted autoplay></video>
   <div class="frame"><div class="laser"></div></div>
   <div class="scan-top">
-    <span>Hold strekkoden i rammen</span>
-    <button id="closeScan">Ferdig</button>
+    <span data-i18n="scanFrame">Hold strekkoden i rammen</span>
+    <button id="closeScan" data-i18n="scanDone">Ferdig</button>
   </div>
-  <div class="scan-hint">Skann så mange varer du vil – trykk «Ferdig» når du er ferdig.</div>
+  <div class="scan-hint" data-i18n="scanHint">Skann så mange varer du vil – trykk «Ferdig» når du er ferdig.</div>
 </div>
 
 <div id="toast" role="status" aria-live="polite"></div>
@@ -184,10 +192,10 @@
   <form method="dialog">
     <h2 id="dlgTitle"></h2>
     <p id="dlgSub"></p>
-    <input id="dlgName" placeholder="Navn på varen" enterkeyhint="done" autocomplete="off">
+    <input id="dlgName" placeholder="Navn på varen" data-i18n-placeholder="namePlaceholder" enterkeyhint="done" autocomplete="off">
     <menu>
-      <button value="cancel" formnovalidate>Avbryt</button>
-      <button value="ok">Lagre</button>
+      <button value="cancel" formnovalidate data-i18n="cancel">Avbryt</button>
+      <button value="ok" data-i18n="save">Lagre</button>
     </menu>
   </form>
 </dialog>
@@ -199,7 +207,9 @@
 /* ---------- Storage ---------- */
 // Versioned keys: bump the suffix (and migrate in migrateStorage) on incompatible changes.
 const LS_ITEMS = "handleliste.items_v1";
-const LS_CODES = "handleliste.barcodes_v1";   // barcode -> name, remembers previously scanned products
+const LS_CODES = "handleliste.barcodes_v1";   // barcode -> name the user typed or renamed (wins over lookups)
+const LS_LOOKUPS = "handleliste.lookups_v1";  // barcode -> { no, en } names from Open Food Facts
+const LS_LANG = "handleliste.lang_v1";        // "no" | "en"
 const LEGACY_KEYS = { [LS_ITEMS]: "handleliste.items", [LS_CODES]: "handleliste.barcodes" };
 
 function storageGet(key) {
@@ -230,13 +240,87 @@ migrateStorage();
 const state = {
   items: load(LS_ITEMS, []),
   codeMap: load(LS_CODES, {}),
+  lookups: load(LS_LOOKUPS, {}),
+  lang: storageGet(LS_LANG) || "no",
 };
 
 function save() {
   storageSet(LS_ITEMS, JSON.stringify(state.items));
   storageSet(LS_CODES, JSON.stringify(state.codeMap));
+  storageSet(LS_LOOKUPS, JSON.stringify(state.lookups));
+  storageSet(LS_LANG, state.lang);
 }
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+
+/* ---------- Language ---------- */
+// Add a language: one entry in LANGS (flag + name) and one in I18N with the same keys as "no".
+const LANGS = {
+  no: { flag: "🇳🇴", name: "Norsk" },
+  en: { flag: "🇬🇧", name: "English" },
+};
+const I18N = {
+  no: {
+    title: "Handleliste",
+    addPlaceholder: "Legg til vare…", addAria: "Ny vare", add: "Legg til",
+    empty1: "Listen er tom.", empty2: "Skann en strekkode eller skriv inn en vare.",
+    clearDone: "Fjern avkryssede", scan: "Skann vare", scanAria: "Skann strekkode",
+    scanFrame: "Hold strekkoden i rammen", scanDone: "Ferdig",
+    scanHint: "Skann så mange varer du vil – trykk «Ferdig» når du er ferdig.",
+    namePlaceholder: "Navn på varen", cancel: "Avbryt", save: "Lagre",
+    inCart: "I handlekurven", left: (n) => `${n} igjen`, allDone: "Alt handlet ✓",
+    check: "Kryss av", uncheck: "Fjern avkrysning", fewer: "Færre", more: "Flere", del: "Slett",
+    rename: "Endre navn", barcode: (c) => `Strekkode ${c}`,
+    unknownTitle: "Ukjent vare", unknownSub: (c) => `Strekkode ${c} – navnet huskes til neste gang.`,
+    looking: (c) => `Slår opp ${c}…`, notFound: "Fant ikke varen",
+    added: (n) => `Lagt til: ${n}`, oneMore: (n) => `Én til: ${n}`,
+    noLib: "Skanneren lastet ikke – sjekk nettet og prøv igjen",
+    noCamPermission: "Appen fikk ikke bruke kameraet", noCam: "Klarte ikke å starte kameraet",
+    langAria: (to) => `Språk: norsk. Bytt til ${to}`,
+  },
+  en: {
+    title: "Shopping List",
+    addPlaceholder: "Add item…", addAria: "New item", add: "Add",
+    empty1: "Your list is empty.", empty2: "Scan a barcode or type an item.",
+    clearDone: "Clear checked items", scan: "Scan item", scanAria: "Scan barcode",
+    scanFrame: "Hold the barcode inside the frame", scanDone: "Done",
+    scanHint: "Scan as many items as you like – tap “Done” when you’re finished.",
+    namePlaceholder: "Item name", cancel: "Cancel", save: "Save",
+    inCart: "In the cart", left: (n) => `${n} left`, allDone: "All done ✓",
+    check: "Check off", uncheck: "Uncheck", fewer: "Fewer", more: "More", del: "Delete",
+    rename: "Rename", barcode: (c) => `Barcode ${c}`,
+    unknownTitle: "Unknown item", unknownSub: (c) => `Barcode ${c} – the name will be remembered next time.`,
+    looking: (c) => `Looking up ${c}…`, notFound: "Product not found",
+    added: (n) => `Added: ${n}`, oneMore: (n) => `One more: ${n}`,
+    noLib: "The scanner didn’t load – check your connection and try again",
+    noCamPermission: "The app wasn’t allowed to use the camera", noCam: "Couldn’t start the camera",
+    langAria: (to) => `Language: English. Switch to ${to}`,
+  },
+};
+if (!I18N[state.lang]) state.lang = "no";
+
+function t(key, ...args) {
+  const v = I18N[state.lang][key] ?? I18N.no[key];
+  return typeof v === "function" ? v(...args) : v;
+}
+
+function nextLang() {
+  const codes = Object.keys(LANGS);
+  return codes[(codes.indexOf(state.lang) + 1) % codes.length];
+}
+
+// Static text lives in the markup (Norwegian default); this re-applies it for the current language.
+function applyLanguage() {
+  document.documentElement.lang = state.lang;
+  document.title = t("title");
+  document.querySelectorAll("[data-i18n]").forEach((el) => { el.textContent = t(el.dataset.i18n); });
+  document.querySelectorAll("[data-i18n-placeholder]").forEach((el) => { el.placeholder = t(el.dataset.i18nPlaceholder); });
+  document.querySelectorAll("[data-i18n-aria]").forEach((el) => { el.setAttribute("aria-label", t(el.dataset.i18nAria)); });
+  const btn = $("langBtn");
+  btn.textContent = LANGS[state.lang].flag;
+  btn.setAttribute("aria-label", t("langAria", LANGS[nextLang()].name));
+  btn.title = LANGS[state.lang].name;
+  render();
+}
 
 /* ---------- List ---------- */
 const $ = (id) => document.getElementById(id);
@@ -275,14 +359,14 @@ function render() {
   if (done.length && open.length) {
     const d = document.createElement("li");
     d.className = "divider";
-    d.textContent = "I handlekurven";
+    d.textContent = t("inCart");
     listEl.append(d);
   }
   done.forEach((i) => listEl.append(row(i)));
 
   $("empty").hidden = state.items.length > 0;
   $("clearDone").hidden = done.length === 0;
-  $("count").textContent = open.length ? `${open.length} igjen` : (state.items.length ? "Alt handlet ✓" : "");
+  $("count").textContent = open.length ? t("left", open.length) : (state.items.length ? t("allDone") : "");
 }
 
 function row(i) {
@@ -293,7 +377,7 @@ function row(i) {
   const check = document.createElement("button");
   check.className = "check";
   check.dataset.action = "toggle";
-  check.setAttribute("aria-label", i.done ? "Fjern avkrysning" : "Kryss av");
+  check.setAttribute("aria-label", i.done ? t("uncheck") : t("check"));
 
   const name = document.createElement("button");
   name.className = "name";
@@ -307,15 +391,15 @@ function row(i) {
 
   const qty = document.createElement("div");
   qty.className = "qty";
-  qty.innerHTML = `<button data-action="dec" aria-label="Færre">−</button>
-                   <span></span>
-                   <button data-action="inc" aria-label="Flere">+</button>`;
+  qty.innerHTML = `<button data-action="dec">−</button><span></span><button data-action="inc">+</button>`;
   qty.querySelector("span").textContent = i.qty;
+  qty.querySelector('[data-action="dec"]').setAttribute("aria-label", t("fewer"));
+  qty.querySelector('[data-action="inc"]').setAttribute("aria-label", t("more"));
 
   const del = document.createElement("button");
   del.className = "del";
   del.dataset.action = "delete";
-  del.setAttribute("aria-label", "Slett");
+  del.setAttribute("aria-label", t("del"));
   del.textContent = "×";
 
   li.append(check, name, qty, del);
@@ -335,7 +419,7 @@ listEl.addEventListener("click", async (e) => {
     case "dec": if (item.qty > 1) item.qty--; break;
     case "delete": state.items = state.items.filter((i) => i !== item); break;
     case "rename": {
-      const n = await askName({ title: "Endre navn", sub: item.barcode ? `Strekkode ${item.barcode}` : "", value: item.name });
+      const n = await askName({ title: t("rename"), sub: item.barcode ? t("barcode", item.barcode) : "", value: item.name });
       if (!n) return;
       item.name = n;
       if (item.barcode) state.codeMap[item.barcode] = n;   // remember the new name next time
@@ -401,11 +485,20 @@ async function lookupProduct(code) {
     const data = await res.json();
     if (data.status !== 1 || !data.product) return null;
     const p = data.product;
-    let name = (p.product_name_nb || p.product_name_no || p.product_name || p.product_name_en || "").trim();
-    if (!name) return null;
     const brand = (p.brands || "").split(",")[0].trim();
-    if (brand && !name.toLowerCase().includes(brand.toLowerCase())) name = `${brand} ${name}`;
-    return name;
+    // Preferred name fields per language; each falls back to the other languages.
+    const order = {
+      no: [p.product_name_nb, p.product_name_no, p.product_name, p.product_name_en],
+      en: [p.product_name_en, p.product_name, p.product_name_nb, p.product_name_no],
+    };
+    const names = {};
+    for (const [lang, fields] of Object.entries(order)) {
+      let name = (fields.find((f) => f && f.trim()) || "").trim();
+      if (!name) return null;
+      if (brand && !name.toLowerCase().includes(brand.toLowerCase())) name = `${brand} ${name}`;
+      names[lang] = name;
+    }
+    return names;   // { no, en }
   } catch {
     return null;   // offline, timeout, etc.
   } finally {
@@ -420,7 +513,7 @@ let lastCode = null, lastTime = 0;
 
 async function openScanner() {
   if (!window.ZXingBrowser) {
-    toast("Skanneren lastet ikke – sjekk nettet og prøv igjen", 3000);
+    toast(t("noLib"), 3000);
     return;
   }
   $("scanner").hidden = false;
@@ -434,8 +527,8 @@ async function openScanner() {
   } catch (err) {
     closeScanner();
     toast(err && err.name === "NotAllowedError"
-      ? "Appen fikk ikke bruke kameraet"
-      : "Klarte ikke å starte kameraet", 3000);
+      ? t("noCamPermission")
+      : t("noCam"), 3000);
     console.error(err);
   }
 }
@@ -455,19 +548,23 @@ async function onCode(code) {
   navigator.vibrate?.(60);
 
   try {
-    let name = state.codeMap[code];
+    // A name the user typed wins; then a cached lookup in the current language; then the network.
+    let name = state.codeMap[code] || state.lookups[code]?.[state.lang];
     if (!name) {
-      toast(`Slår opp ${code}…`, 6000);
-      name = await lookupProduct(code);
-      if (!name) {
-        toast("Fant ikke varen", 1200);
-        name = await askName({ title: "Ukjent vare", sub: `Strekkode ${code} – navnet huskes til neste gang.` });
+      toast(t("looking", code), 6000);
+      const names = await lookupProduct(code);
+      if (names) {
+        state.lookups[code] = names;
+        name = names[state.lang];
+      } else {
+        toast(t("notFound"), 1200);
+        name = await askName({ title: t("unknownTitle"), sub: t("unknownSub", code) });
+        if (name) state.codeMap[code] = name;
       }
     }
     if (name) {
-      state.codeMap[code] = name;
-      const r = addItem(name, code);
-      toast(r === "more" ? `Én til: ${name}` : `Lagt til: ${name}`);
+      const r = addItem(name, code);   // addItem saves
+      toast(r === "more" ? t("oneMore", name) : t("added", name));
     }
   } finally {
     lastTime = Date.now();
@@ -476,11 +573,16 @@ async function onCode(code) {
 }
 
 $("scanBtn").addEventListener("click", openScanner);
+$("langBtn").addEventListener("click", () => {
+  state.lang = nextLang();
+  save();
+  applyLanguage();
+});
 $("closeScan").addEventListener("click", closeScanner);
 document.addEventListener("visibilitychange", () => { if (document.hidden && controls) closeScanner(); });
 
 /* ---------- Startup ---------- */
-render();
+applyLanguage();   // also renders
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(console.warn));
 }
