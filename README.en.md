@@ -5,6 +5,8 @@
 A shopping list as an offline PWA for iPhone, with a barcode scanner. Plain HTML/CSS/JS with no build step.
 The interface is available in Norwegian (default) and English.
 
+**▶ Open the app: [runesor.github.io/shoplist-app](https://runesor.github.io/shoplist-app/)**
+
 <table>
   <tr>
     <td><img src="screenshots/list-no-light.png" width="200" alt="Light mode"></td>
@@ -68,7 +70,8 @@ get the new version.
 
 ## Testing
 - Locally: `python3 -m http.server 8000` and open http://localhost:8000. The camera works on `localhost`.
-- iPhone: the camera requires HTTPS, so host the app on GitHub Pages or Netlify Drop.
+- iPhone: the camera requires HTTPS. The app is on GitHub Pages (<https://runesor.github.io/shoplist-app/>), published from `main` / root.
+  Changes go live a couple of minutes after a push to `main`.
   Add it to the home screen via Safari → Share → "Add to Home Screen".
 - No automated tests. Test manually in the browser and on iPhone.
 

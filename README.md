@@ -5,6 +5,8 @@
 Handleliste som offline-PWA for iPhone, med strekkodeskanner. Ren HTML/CSS/JS uten byggesteg.
 Grensesnittet finnes på norsk (standard) og engelsk.
 
+**▶ Åpne appen: [runesor.github.io/shoplist-app](https://runesor.github.io/shoplist-app/)**
+
 <table>
   <tr>
     <td><img src="screenshots/list-no-light.png" width="200" alt="Lys modus"></td>
@@ -67,7 +69,8 @@ fortsette å vise gammel versjon. Lukk og åpne appen (noen ganger to ganger) fo
 
 ## Test
 - Lokalt: `python3 -m http.server 8000` og åpne http://localhost:8000. Kameraet virker på `localhost`.
-- iPhone: kameraet krever HTTPS, så legg appen på GitHub Pages eller Netlify Drop.
+- iPhone: kameraet krever HTTPS. Appen ligger på GitHub Pages (<https://runesor.github.io/shoplist-app/>), publisert fra `main` / rot.
+  Endringer er ute et par minutter etter push til `main`.
   Legg den til på hjemskjermen via Safari → Del → «Legg til på Hjem-skjerm».
 - Ingen automatiske tester. Test manuelt i nettleser og på iPhone.
 
