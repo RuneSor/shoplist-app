@@ -1,5 +1,5 @@
 // Bump the version on every change, otherwise iOS may keep serving the old files from cache.
-const CACHE = "handleliste-v4";
+const CACHE = "handleliste-v5";
 const APP_SHELL = [
   "./",
   "./index.html",

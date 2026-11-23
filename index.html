@@ -118,6 +118,12 @@
   .scan-top span { font-size: 15px; opacity: .9; }
   #closeScan { background: rgba(255,255,255,.18); color: #fff; border: 0; border-radius: 999px;
     padding: 9px 18px; font-weight: 700; }
+  .scan-actions { display: flex; align-items: center; gap: 8px; }
+  #switchCam { background: rgba(255,255,255,.18); color: #fff; border: 0; border-radius: 999px;
+    width: 40px; height: 40px; padding: 0; display: grid; place-items: center; }
+  #switchCam[hidden] { display: none; }
+  #switchCam svg { width: 22px; height: 22px; }
+  .scan-info { margin-top: 6px; font-size: 12px; opacity: .6; }
   .scan-hint { position: absolute; left: 0; right: 0; bottom: calc(env(safe-area-inset-bottom) + 28px);
     text-align: center; color: rgba(255,255,255,.75); font-size: 14px; padding: 0 24px; }
 
@@ -181,9 +187,20 @@
   <div class="frame"><div class="laser"></div></div>
   <div class="scan-top">
     <span data-i18n="scanFrame">Hold strekkoden i rammen</span>
-    <button id="closeScan" data-i18n="scanDone">Ferdig</button>
+    <div class="scan-actions">
+      <button id="switchCam" type="button" hidden aria-label="Bytt kamera" data-i18n-aria="switchCam">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M21 3v5h-5"/>
+          <path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 21v-5h5"/>
+        </svg>
+      </button>
+      <button id="closeScan" data-i18n="scanDone">Ferdig</button>
+    </div>
   </div>
-  <div class="scan-hint" data-i18n="scanHint">Skann så mange varer du vil – trykk «Ferdig» når du er ferdig.</div>
+  <div class="scan-hint">
+    <span data-i18n="scanHint">Skann så mange varer du vil – trykk «Ferdig» når du er ferdig.</span>
+    <div id="scanInfo" class="scan-info"></div>
+  </div>
 </div>
 
 <div id="toast" role="status" aria-live="polite"></div>
@@ -210,6 +227,7 @@ const LS_ITEMS = "handleliste.items_v1";
 const LS_CODES = "handleliste.barcodes_v1";   // barcode -> name the user typed or renamed (wins over lookups)
 const LS_LOOKUPS = "handleliste.lookups_v1";  // barcode -> { no, en } names from Open Food Facts
 const LS_LANG = "handleliste.lang_v1";        // "no" | "en"
+const LS_CAMERA = "handleliste.camera_v1";    // deviceId picked with "switch camera" (unset = automatic)
 const LEGACY_KEYS = { [LS_ITEMS]: "handleliste.items", [LS_CODES]: "handleliste.barcodes" };
 
 function storageGet(key) {
@@ -276,6 +294,7 @@ const I18N = {
     noLib: "Skanneren lastet ikke – sjekk nettet og prøv igjen",
     noCamPermission: "Appen fikk ikke bruke kameraet", noCam: "Klarte ikke å starte kameraet",
     langAria: (to) => `Språk: norsk. Bytt til ${to}`,
+    switchCam: "Bytt kamera",
   },
   en: {
     title: "Shopping List",
@@ -294,6 +313,7 @@ const I18N = {
     noLib: "The scanner didn’t load – check your connection and try again",
     noCamPermission: "The app wasn’t allowed to use the camera", noCam: "Couldn’t start the camera",
     langAria: (to) => `Language: English. Switch to ${to}`,
+    switchCam: "Switch camera",
   },
 };
 if (!I18N[state.lang]) state.lang = "no";
@@ -507,24 +527,137 @@ async function lookupProduct(code) {
 }
 
 /* ---------- Scanner ---------- */
-let controls = null;
+// The app opens the camera itself so it can pick the lens, then decodes with:
+//  - the native BarcodeDetector where it exists (Chrome on Android): fast and tolerant of blur
+//  - ZXing otherwise (iOS Safari)
+const RETAIL_FORMATS = ["ean_13", "ean_8", "upc_a", "upc_e"];
+
+let scan = null;      // { stream, decoder, cams, engine } while the scanner is open
+let scanToken = 0;    // bumped on close, so a slow openScanner() can tell it was cancelled
 let busy = false;
 let lastCode = null, lastTime = 0;
 
+async function createDetector() {
+  if (!("BarcodeDetector" in window)) return null;
+  try {
+    const supported = await BarcodeDetector.getSupportedFormats();
+    const formats = RETAIL_FORMATS.filter((f) => supported.includes(f));
+    return formats.length ? new BarcodeDetector({ formats }) : null;
+  } catch {
+    return null;
+  }
+}
+
+function openStream(deviceId) {
+  const pick = deviceId ? { deviceId: { exact: deviceId } } : { facingMode: { ideal: "environment" } };
+  return navigator.mediaDevices.getUserMedia({
+    audio: false,
+    video: { ...pick, width: { ideal: 1280 }, height: { ideal: 720 } },
+  });
+}
+
+const stopStream = (stream) => stream?.getTracks().forEach((tr) => tr.stop());
+const currentDeviceId = (stream) => stream.getVideoTracks()[0]?.getSettings().deviceId;
+
+// Chrome on Android labels lenses "camera2 <id>, facing back". facingMode alone often gives an
+// ultra-wide lens without autofocus, which can't read barcodes up close; the back camera with the
+// lowest id is normally the main lens. Other platforms (iOS) keep the browser's choice.
+function pickMainBackCamera(cams) {
+  const back = cams
+    .map((c) => ({ c, m: /camera2 (\d+), facing back/i.exec(c.label) }))
+    .filter((x) => x.m)
+    .sort((a, b) => Number(a.m[1]) - Number(b.m[1]));
+  return back[0]?.c.deviceId ?? null;
+}
+
+async function enableContinuousFocus(stream) {
+  const track = stream.getVideoTracks()[0];
+  try {
+    if (track?.getCapabilities?.().focusMode?.includes("continuous")) {
+      await track.applyConstraints({ advanced: [{ focusMode: "continuous" }] });
+    }
+  } catch { /* focus control is optional */ }
+}
+
+async function startCamera() {
+  let chosen = storageGet(LS_CAMERA);
+  let stream;
+  try {
+    stream = await openStream(chosen);
+  } catch (err) {
+    if (!chosen || err.name === "NotAllowedError") throw err;
+    storageRemove(LS_CAMERA);   // the saved camera is gone; fall back to automatic
+    chosen = null;
+    stream = await openStream(null);
+  }
+  // Labels are only filled in once permission is granted, so enumerate after opening a stream
+  const cams = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === "videoinput");
+  if (!chosen) {
+    const main = pickMainBackCamera(cams);
+    if (main && main !== currentDeviceId(stream)) {
+      try {
+        const better = await openStream(main);
+        stopStream(stream);
+        stream = better;
+      } catch { /* keep the first stream */ }
+    }
+  }
+  await enableContinuousFocus(stream);
+  return { stream, cams };
+}
+
+// Polls the native detector; skips frames while a code is being handled
+function startDetectorLoop(detector, video) {
+  let stopped = false;
+  (async () => {
+    while (!stopped) {
+      if (!busy && video.readyState >= 2) {
+        try {
+          const codes = await detector.detect(video);
+          if (!stopped && codes.length) onCode(codes[0].rawValue);
+        } catch { /* frame not ready */ }
+      }
+      await new Promise((r) => setTimeout(r, 120));
+    }
+  })();
+  return { stop: () => { stopped = true; } };
+}
+
 async function openScanner() {
-  if (!window.ZXingBrowser) {
+  const token = ++scanToken;
+  const detector = await createDetector();
+  if (!detector && !window.ZXingBrowser) {
     toast(t("noLib"), 3000);
     return;
   }
   $("scanner").hidden = false;
+  $("switchCam").hidden = true;
+  $("scanInfo").textContent = "";
+  let stream;
   try {
-    const reader = new ZXingBrowser.BrowserMultiFormatReader();
-    controls = await reader.decodeFromConstraints(
-      { audio: false, video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } } },
-      $("video"),
-      (result) => { if (result) onCode(result.getText()); }
-    );
+    const cam = await startCamera();
+    stream = cam.stream;
+    if (token !== scanToken) { stopStream(stream); return; }   // closed while starting
+
+    const video = $("video");
+    let decoder;
+    if (detector) {
+      video.srcObject = stream;
+      await video.play().catch(() => {});
+      decoder = startDetectorLoop(detector, video);
+    } else {
+      // 1D-only reader: retail barcodes, less work per frame than the multi-format reader
+      const reader = new ZXingBrowser.BrowserMultiFormatOneDReader();
+      decoder = await reader.decodeFromStream(stream, video, (result) => { if (result) onCode(result.getText()); });
+    }
+    if (token !== scanToken) { decoder.stop(); stopStream(stream); return; }
+
+    scan = { stream, decoder, cams: cam.cams, engine: detector ? "BarcodeDetector" : "ZXing" };
+    $("switchCam").hidden = cam.cams.length < 2;
+    const label = stream.getVideoTracks()[0]?.label || "";
+    $("scanInfo").textContent = [scan.engine, label].filter(Boolean).join(" · ");
   } catch (err) {
+    stopStream(stream);
     closeScanner();
     toast(err && err.name === "NotAllowedError"
       ? t("noCamPermission")
@@ -534,9 +667,26 @@ async function openScanner() {
 }
 
 function closeScanner() {
-  try { controls?.stop(); } catch {}
-  controls = null;
+  scanToken++;
+  if (scan) {
+    try { scan.decoder.stop(); } catch {}
+    stopStream(scan.stream);
+  }
+  scan = null;
+  $("video").srcObject = null;
   $("scanner").hidden = true;
+}
+
+// Cycles through the cameras (front ones last) and remembers the choice
+function switchCamera() {
+  if (!scan) return;
+  const front = (c) => /front|facing front/i.test(c.label);
+  const cams = [...scan.cams.filter((c) => !front(c)), ...scan.cams.filter(front)];
+  const i = cams.findIndex((c) => c.deviceId === currentDeviceId(scan.stream));
+  const next = cams[(i + 1) % cams.length];
+  storageSet(LS_CAMERA, next.deviceId);
+  closeScanner();
+  openScanner();
 }
 
 async function onCode(code) {
@@ -579,7 +729,8 @@ $("langBtn").addEventListener("click", () => {
   applyLanguage();
 });
 $("closeScan").addEventListener("click", closeScanner);
-document.addEventListener("visibilitychange", () => { if (document.hidden && controls) closeScanner(); });
+$("switchCam").addEventListener("click", switchCamera);
+document.addEventListener("visibilitychange", () => { if (document.hidden && !$("scanner").hidden) closeScanner(); });
 
 /* ---------- Startup ---------- */
 applyLanguage();   // also renders

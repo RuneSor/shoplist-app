@@ -23,7 +23,9 @@ The interface is available in Norwegian (default) and English.
 </table>
 
 ## Features
-- Add items by typing them or scanning their barcode (rear camera, ZXing).
+- Add items by typing them or scanning their barcode with the rear camera. On Android (Chrome) the
+  browser's built-in `BarcodeDetector` is used, otherwise ZXing (iPhone). On Android the main camera is
+  picked automatically with continuous focus, and the ⟳ button in the scanner switches camera if it guesses wrong.
 - Scanned items are looked up in [Open Food Facts](https://world.openfoodfacts.org). The name is taken
   in the selected language when available, with the brand in front.
 - A flag button (🇳🇴/🇬🇧) in the top right switches language. The choice controls both the interface text
@@ -55,6 +57,7 @@ All paths are relative, so the app can live in a subfolder (e.g. GitHub Pages).
 | `handleliste.barcodes_v1` | Barcode → name the user typed or renamed (takes priority over lookups) |
 | `handleliste.lookups_v1` | Barcode → `{ no, en }` from Open Food Facts, so switching language needs no new lookup |
 | `handleliste.lang_v1` | Selected language: `no` or `en` |
+| `handleliste.camera_v1` | Camera picked with ⟳ (`deviceId`). Missing = automatic choice |
 
 Data under the old unversioned keys (`handleliste.items`, `handleliste.barcodes`) is migrated
 automatically at startup.
@@ -73,7 +76,12 @@ get the new version.
 - iPhone: the camera requires HTTPS. The app is on GitHub Pages (<https://runesor.github.io/shoplist-app/>), published from `main` / root.
   Changes go live a couple of minutes after a push to `main`.
   Add it to the home screen via Safari → Share → "Add to Home Screen".
-- No automated tests. Test manually in the browser and on iPhone.
+- Android without publishing: connect the phone to the Mac over USB, open `chrome://inspect` → *Port forwarding*
+  (`8000` → `localhost:8000`) and open `http://localhost:8000` in Chrome on the phone. `localhost` counts as
+  secure, so the camera works.
+- The line at the bottom of the scanner shows which decoder and camera are in use (e.g.
+  `BarcodeDetector · camera2 0, facing back`).
+- No automated tests. Test manually in the browser, on iPhone and on Android.
 
 ## Screenshots
 The images in `screenshots/` are made with `tools/screenshots.mjs` (iPhone 13, light/dark mode,
