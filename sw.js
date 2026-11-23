@@ -1,5 +1,5 @@
-// Bump versjonen når du endrer filene, så henter appen den nye versjonen.
-const CACHE = "handleliste-v1";
+// Bump the version on every change, otherwise iOS may keep serving the old files from cache.
+const CACHE = "handleliste-v2";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -14,8 +14,8 @@ self.addEventListener("install", (event) => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE);
     await cache.addAll(APP_SHELL);
-    // Skannerbiblioteket caches separat, så en CDN-feil ikke stopper installasjonen
-    try { await cache.add(SCANNER_LIB); } catch (e) { console.warn("Kunne ikke cache ZXing", e); }
+    // The scanner library is cached separately so a CDN failure doesn't block installation
+    try { await cache.add(SCANNER_LIB); } catch (e) { console.warn("Could not cache ZXing", e); }
     self.skipWaiting();
   })());
 });
@@ -32,16 +32,18 @@ self.addEventListener("fetch", (event) => {
   if (req.method !== "GET") return;
   const url = new URL(req.url);
 
-  // Produktoppslag går alltid mot nettet
+  // Product lookups always go to the network
   if (url.hostname.endsWith("openfoodfacts.org")) return;
 
-  // Selve siden: nett først (for oppdateringer), cache hvis offline
+  // The page itself: network first (to get updates), cache when offline
   if (req.mode === "navigate") {
     event.respondWith((async () => {
       try {
         const res = await fetch(req);
-        const cache = await caches.open(CACHE);
-        cache.put("./index.html", res.clone());
+        if (res.ok) {
+          const cache = await caches.open(CACHE);
+          cache.put("./index.html", res.clone());
+        }
         return res;
       } catch {
         return (await caches.match("./index.html")) || Response.error();
@@ -50,15 +52,19 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Alt annet: cache først
+  // Everything else: cache first
   event.respondWith((async () => {
     const cached = await caches.match(req);
     if (cached) return cached;
-    const res = await fetch(req);
-    if (res.ok && (url.origin === location.origin || req.url === SCANNER_LIB)) {
-      const cache = await caches.open(CACHE);
-      cache.put(req, res.clone());
+    try {
+      const res = await fetch(req);
+      if (res.ok && (url.origin === location.origin || req.url === SCANNER_LIB)) {
+        const cache = await caches.open(CACHE);
+        cache.put(req, res.clone());
+      }
+      return res;
+    } catch {
+      return Response.error();   // offline and not cached
     }
-    return res;
   })());
 });

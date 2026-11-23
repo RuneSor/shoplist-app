@@ -196,37 +196,71 @@
 <script>
 "use strict";
 
-/* ---------- Lagring ---------- */
-const LS_ITEMS = "handleliste.items";
-const LS_CODES = "handleliste.barcodes";   // strekkode -> navn (husker varer du har skannet før)
+/* ---------- Storage ---------- */
+// Versioned keys: bump the suffix (and migrate in migrateStorage) on incompatible changes.
+const LS_ITEMS = "handleliste.items_v1";
+const LS_CODES = "handleliste.barcodes_v1";   // barcode -> name, remembers previously scanned products
+const LEGACY_KEYS = { [LS_ITEMS]: "handleliste.items", [LS_CODES]: "handleliste.barcodes" };
+
+function storageGet(key) {
+  try { return localStorage.getItem(key); } catch { return null; }
+}
+function storageSet(key, value) {
+  try { localStorage.setItem(key, value); return true; } catch (e) { console.warn("Could not save", e); return false; }
+}
+function storageRemove(key) {
+  try { localStorage.removeItem(key); } catch {}
+}
+
+// Runs once at startup: moves data from the unversioned keys to the _v1 keys.
+function migrateStorage() {
+  for (const [key, legacy] of Object.entries(LEGACY_KEYS)) {
+    const old = storageGet(legacy);
+    if (old === null) continue;
+    if (storageGet(key) === null && !storageSet(key, old)) continue;   // keep legacy data if the copy failed
+    storageRemove(legacy);
+  }
+}
 
 function load(key, fallback) {
-  try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; }
+  try { return JSON.parse(storageGet(key)) ?? fallback; } catch { return fallback; }
 }
-let items = load(LS_ITEMS, []);
-let codeMap = load(LS_CODES, {});
+
+migrateStorage();
+const state = {
+  items: load(LS_ITEMS, []),
+  codeMap: load(LS_CODES, {}),
+};
 
 function save() {
-  try {
-    localStorage.setItem(LS_ITEMS, JSON.stringify(items));
-    localStorage.setItem(LS_CODES, JSON.stringify(codeMap));
-  } catch (e) { console.warn("Kunne ikke lagre", e); }
+  storageSet(LS_ITEMS, JSON.stringify(state.items));
+  storageSet(LS_CODES, JSON.stringify(state.codeMap));
 }
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
-/* ---------- Liste ---------- */
+/* ---------- List ---------- */
 const $ = (id) => document.getElementById(id);
 const listEl = $("list");
+
+// Same open product = same barcode, or same name when at most one of them has a barcode.
+// A typed "Melk" and a scanned "Melk" therefore merge; two different barcodes never do.
+function findOpenMatch(name, barcode) {
+  const lower = name.toLowerCase();
+  return state.items.find((i) => !i.done && (
+    (barcode && i.barcode === barcode) ||
+    (i.name.toLowerCase() === lower && !(barcode && i.barcode))
+  ));
+}
 
 function addItem(name, barcode = null) {
   name = name.trim();
   if (!name) return null;
-  const existing = items.find((i) => !i.done &&
-    (barcode ? i.barcode === barcode : i.name.toLowerCase() === name.toLowerCase()));
+  const existing = findOpenMatch(name, barcode);
   if (existing) {
     existing.qty++;
+    if (barcode && !existing.barcode) existing.barcode = barcode;
   } else {
-    items.unshift({ id: uid(), name, barcode, qty: 1, done: false });
+    state.items.unshift({ id: uid(), name, barcode, qty: 1, done: false });
   }
   save(); render();
   return existing ? "more" : "new";
@@ -234,8 +268,8 @@ function addItem(name, barcode = null) {
 
 function render() {
   listEl.replaceChildren();
-  const open = items.filter((i) => !i.done);
-  const done = items.filter((i) => i.done);
+  const open = state.items.filter((i) => !i.done);
+  const done = state.items.filter((i) => i.done);
 
   open.forEach((i) => listEl.append(row(i)));
   if (done.length && open.length) {
@@ -246,9 +280,9 @@ function render() {
   }
   done.forEach((i) => listEl.append(row(i)));
 
-  $("empty").hidden = items.length > 0;
+  $("empty").hidden = state.items.length > 0;
   $("clearDone").hidden = done.length === 0;
-  $("count").textContent = open.length ? `${open.length} igjen` : (items.length ? "Alt handlet ✓" : "");
+  $("count").textContent = open.length ? `${open.length} igjen` : (state.items.length ? "Alt handlet ✓" : "");
 }
 
 function row(i) {
@@ -292,19 +326,19 @@ listEl.addEventListener("click", async (e) => {
   const btn = e.target.closest("[data-action]");
   if (!btn) return;
   const id = btn.closest(".item").dataset.id;
-  const item = items.find((i) => i.id === id);
+  const item = state.items.find((i) => i.id === id);
   if (!item) return;
 
   switch (btn.dataset.action) {
     case "toggle": item.done = !item.done; break;
     case "inc": item.qty++; break;
     case "dec": if (item.qty > 1) item.qty--; break;
-    case "delete": items = items.filter((i) => i !== item); break;
+    case "delete": state.items = state.items.filter((i) => i !== item); break;
     case "rename": {
       const n = await askName({ title: "Endre navn", sub: item.barcode ? `Strekkode ${item.barcode}` : "", value: item.name });
       if (!n) return;
       item.name = n;
-      if (item.barcode) codeMap[item.barcode] = n;   // husk det nye navnet neste gang
+      if (item.barcode) state.codeMap[item.barcode] = n;   // remember the new name next time
       break;
     }
   }
@@ -318,7 +352,7 @@ $("addForm").addEventListener("submit", (e) => {
 });
 
 $("clearDone").addEventListener("click", () => {
-  items = items.filter((i) => !i.done);
+  state.items = state.items.filter((i) => !i.done);
   save(); render();
 });
 
@@ -332,7 +366,7 @@ function toast(msg, ms = 1800) {
   toastTimer = setTimeout(() => t.classList.remove("show"), ms);
 }
 
-/* ---------- Navnedialog ---------- */
+/* ---------- Name dialog ---------- */
 function askName({ title, sub = "", value = "" }) {
   const dlg = $("nameDialog");
   $("dlgTitle").textContent = title;
@@ -350,12 +384,12 @@ function askName({ title, sub = "", value = "" }) {
     }, { once: true });
   });
 }
-// Enter i feltet skal lagre
+// Enter in the field saves
 $("dlgName").addEventListener("keydown", (e) => {
   if (e.key === "Enter") { e.preventDefault(); $("nameDialog").close("ok"); }
 });
 
-/* ---------- Produktoppslag (Open Food Facts) ---------- */
+/* ---------- Product lookup (Open Food Facts) ---------- */
 async function lookupProduct(code) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 6000);
@@ -373,13 +407,13 @@ async function lookupProduct(code) {
     if (brand && !name.toLowerCase().includes(brand.toLowerCase())) name = `${brand} ${name}`;
     return name;
   } catch {
-    return null;   // offline, timeout e.l.
+    return null;   // offline, timeout, etc.
   } finally {
     clearTimeout(timer);
   }
 }
 
-/* ---------- Skanner ---------- */
+/* ---------- Scanner ---------- */
 let controls = null;
 let busy = false;
 let lastCode = null, lastTime = 0;
@@ -414,14 +448,14 @@ function closeScanner() {
 
 async function onCode(code) {
   const now = Date.now();
-  // Unngå at samme kode registreres mange ganger mens den er i bildet
+  // Avoid registering the same code repeatedly while it stays in view
   if (busy || (code === lastCode && now - lastTime < 2500)) return;
   busy = true;
   lastCode = code;
   navigator.vibrate?.(60);
 
   try {
-    let name = codeMap[code];
+    let name = state.codeMap[code];
     if (!name) {
       toast(`Slår opp ${code}…`, 6000);
       name = await lookupProduct(code);
@@ -431,7 +465,7 @@ async function onCode(code) {
       }
     }
     if (name) {
-      codeMap[code] = name;
+      state.codeMap[code] = name;
       const r = addItem(name, code);
       toast(r === "more" ? `Én til: ${name}` : `Lagt til: ${name}`);
     }
@@ -445,7 +479,7 @@ $("scanBtn").addEventListener("click", openScanner);
 $("closeScan").addEventListener("click", closeScanner);
 document.addEventListener("visibilitychange", () => { if (document.hidden && controls) closeScanner(); });
 
-/* ---------- Oppstart ---------- */
+/* ---------- Startup ---------- */
 render();
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(console.warn));
