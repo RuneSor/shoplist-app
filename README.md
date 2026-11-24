@@ -31,6 +31,13 @@ Grensesnittet finnes på norsk (standard) og engelsk.
 - Språkknapp med flagg (🇳🇴/🇬🇧) øverst til høyre bytter språk. Valget styrer både teksten i
   grensesnittet og hvilket produktnavn som hentes fra Open Food Facts (norsk: `nb → no → standard → en`,
   engelsk: `en → standard → nb → no`).
+- Skannede varer får et lite produktbilde fra Open Food Facts når det finnes. Bildene caches av service
+  workeren (maks 300), så de vises også offline i butikken. Trykk på navnet for å se bildet i stor størrelse
+  i dialogen for å endre navn.
+- Skannede varer får en kategori (f.eks. «Meieri», «Kjøtt», «Frukt og bær») ut fra `categories_tags` i
+  Open Food Facts. Den vises før strekkoden under navnet og følger språkvalget. Uten bilde vises et ikon for
+  kategorien (🥛 🥩 🍞 …), og 🛒 for varer uten kategori. Oppslag lagret før kategoriene fantes, oppdateres i
+  bakgrunnen ved oppstart.
 - Ukjente strekkoder får et navn du skriver inn. Strekkoden og navnet huskes til neste gang.
 - Samme vare to ganger gir høyere antall. En skrevet «Melk» og en skannet «Melk» slås sammen, men
   to ulike strekkoder gjør aldri det.
@@ -41,7 +48,7 @@ Grensesnittet finnes på norsk (standard) og engelsk.
 | Fil | Innhold |
 |---|---|
 | `index.html` | Hele appen: CSS, markup og JS |
-| `sw.js` | Service worker. Siden hentes fra nettet først, alt annet fra cachen først. Open Food Facts går forbi cachen. |
+| `sw.js` | Service worker. Siden hentes fra nettet først, alt annet fra cachen først. Produktbilder ligger i en egen cache (`handleliste-images-v1`) som beholdes ved oppdatering. Produktoppslag går forbi cachen. |
 | `manifest.webmanifest` | PWA-manifest (standalone, portrett) |
 | `icons/` | 192, 512 (også maskable) og apple-touch-icon |
 | `screenshots/` | Skjermbilder til README (caches ikke av service workeren) |
@@ -55,7 +62,7 @@ Alle stier er relative, så appen kan ligge i en undermappe (f.eks. GitHub Pages
 |---|---|
 | `handleliste.items_v1` | Listen: `{ id, name, barcode, qty, done }[]` |
 | `handleliste.barcodes_v1` | Strekkode → navn brukeren har skrevet inn eller endret (vinner over oppslag) |
-| `handleliste.lookups_v1` | Strekkode → `{ no, en }` fra Open Food Facts, så språkbytte ikke krever nytt oppslag |
+| `handleliste.lookups_v1` | Strekkode → `{ no, en, image, imageFull, category }` fra Open Food Facts (navn, bilde 200/400 px, kategorinøkkel), så språkbytte ikke krever nytt oppslag |
 | `handleliste.lang_v1` | Valgt språk: `no` eller `en` |
 | `handleliste.camera_v1` | Kamera valgt med ⟳ (`deviceId`). Mangler = automatisk valg |
 
@@ -68,7 +75,8 @@ automatisk ved oppstart.
 
 ## Viktig ved oppdatering
 Øk `CACHE`-versjonen øverst i `sw.js` (f.eks. fra `handleliste-v4` til `handleliste-v5`) ved hver endring. Ellers kan iOS
-fortsette å vise gammel versjon. Lukk og åpne appen (noen ganger to ganger) for å få ny versjon.
+fortsette å vise gammel versjon. Bildecachen (`IMAGE_CACHE`) skal ikke økes, bare ved inkompatible endringer.
+Lukk og åpne appen (noen ganger to ganger) for å få ny versjon.
 
 ## Test
 - Lokalt: `python3 -m http.server 8000` og åpne http://localhost:8000. Kameraet virker på `localhost`.
@@ -102,6 +110,9 @@ All tekst ligger i `I18N` i `index.html`. Flagg og navn ligger i `LANGS`. Tekste
 
 Nytt språk: legg til en oppføring i `LANGS` og en i `I18N` med de samme nøklene som `no`, og legg til
 navnefeltene i rekkefølgen i `lookupProduct()`. Knappen går gjennom språkene i rekkefølge.
+
+Kategorinavnene ligger under `cat` i `I18N`, og ikonene i `CATEGORY_ICONS`. Reglene som sorterer tagger fra
+Open Food Facts inn i kategorier, er `CATEGORY_RULES`. Mest spesifikke tagg sjekkes først.
 
 Varer som allerede står på listen beholder navnet de fikk da de ble lagt til.
 Manifestet (navn under ikonet på hjemskjermen) er statisk og på norsk.

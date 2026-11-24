@@ -56,7 +56,7 @@
   #list { list-style: none; margin: 0; padding: 0; background: var(--card);
     border-radius: var(--radius); overflow: hidden; border: 1px solid var(--line); }
   #list:empty { display: none; }
-  .item { display: flex; align-items: center; gap: 10px; padding: 10px 10px 10px 12px;
+  .item { display: flex; align-items: center; gap: 8px; padding: 10px 8px 10px 12px;
     border-top: 1px solid var(--line); min-height: 56px; }
   .item:first-child { border-top: 0; }
   .check {
@@ -67,12 +67,17 @@
   .item.done .check::after { content: ""; width: 7px; height: 12px; border: solid var(--accent-ink);
     border-width: 0 2.5px 2.5px 0; transform: translateY(-1px) rotate(45deg); }
   .name { flex: 1; min-width: 0; background: none; border: 0; text-align: left; padding: 4px 0; }
-  .name small { display: block; color: var(--muted); font-size: 12px; }
+  .name small { display: block; color: var(--muted); font-size: 12px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .item.done .name { color: var(--muted); text-decoration: line-through; }
+  .thumb { flex: none; width: 36px; height: 36px; border-radius: 8px; object-fit: contain;
+    background: #fff; border: 1px solid var(--line); }
+  .thumb-icon { display: grid; place-items: center; background: var(--bg); font-size: 20px; line-height: 1; }
+  .item.done .thumb { opacity: .45; }
   .qty { display: flex; align-items: center; gap: 2px; }
   .item.done .qty { display: none; }
   .qty button, .del {
-    width: 34px; height: 34px; border-radius: 10px; border: 0; background: none;
+    width: 30px; height: 34px; border-radius: 10px; border: 0; background: none;
     font-size: 20px; line-height: 1; color: var(--muted);
   }
   .qty button:active, .del:active { background: var(--line); }
@@ -144,6 +149,9 @@
   dialog::backdrop { background: rgba(0,0,0,.45); }
   dialog h2 { margin: 0 0 4px; font-size: 20px; }
   dialog p { margin: 0 0 14px; color: var(--muted); font-size: 14px; }
+  #dlgImage { display: block; width: 100%; max-height: 38vh; object-fit: contain; margin: 0 0 14px;
+    background: #fff; border-radius: 12px; }
+  #dlgImage[hidden] { display: none; }
   #dlgName { width: 100%; font: inherit; color: var(--text); background: var(--bg);
     border: 1px solid var(--line); border-radius: 12px; padding: 12px; outline: none; }
   #dlgName:focus { border-color: var(--accent); }
@@ -209,6 +217,7 @@
   <form method="dialog">
     <h2 id="dlgTitle"></h2>
     <p id="dlgSub"></p>
+    <img id="dlgImage" alt="" crossorigin="anonymous" hidden>
     <input id="dlgName" placeholder="Navn på varen" data-i18n-placeholder="namePlaceholder" enterkeyhint="done" autocomplete="off">
     <menu>
       <button value="cancel" formnovalidate data-i18n="cancel">Avbryt</button>
@@ -225,7 +234,8 @@
 // Versioned keys: bump the suffix (and migrate in migrateStorage) on incompatible changes.
 const LS_ITEMS = "handleliste.items_v1";
 const LS_CODES = "handleliste.barcodes_v1";   // barcode -> name the user typed or renamed (wins over lookups)
-const LS_LOOKUPS = "handleliste.lookups_v1";  // barcode -> { no, en } names from Open Food Facts
+const LS_LOOKUPS = "handleliste.lookups_v1";  // barcode -> { no, en, image, imageFull, category } from Open Food Facts
+const IMAGE_ORIGIN = "https://images.openfoodfacts.org";
 const LS_LANG = "handleliste.lang_v1";        // "no" | "en"
 const LS_CAMERA = "handleliste.camera_v1";    // deviceId picked with "switch camera" (unset = automatic)
 const LEGACY_KEYS = { [LS_ITEMS]: "handleliste.items", [LS_CODES]: "handleliste.barcodes" };
@@ -295,6 +305,11 @@ const I18N = {
     noCamPermission: "Appen fikk ikke bruke kameraet", noCam: "Klarte ikke å starte kameraet",
     langAria: (to) => `Språk: norsk. Bytt til ${to}`,
     switchCam: "Bytt kamera",
+    cat: {
+      frozen: "Frysevarer", cheese: "Ost", eggs: "Egg", dairy: "Meieri", meat: "Kjøtt", fish: "Fisk og sjømat",
+      bread: "Brød og bakevarer", beverages: "Drikke", snacks: "Snacks og godteri", fruit: "Frukt og bær",
+      vegetables: "Grønnsaker", pantry: "Tørrvarer og hermetikk", condiments: "Saus og krydder", spreads: "Pålegg",
+    },
   },
   en: {
     title: "Shopping List",
@@ -314,6 +329,11 @@ const I18N = {
     noCamPermission: "The app wasn’t allowed to use the camera", noCam: "Couldn’t start the camera",
     langAria: (to) => `Language: English. Switch to ${to}`,
     switchCam: "Switch camera",
+    cat: {
+      frozen: "Frozen", cheese: "Cheese", eggs: "Eggs", dairy: "Dairy", meat: "Meat", fish: "Fish & seafood",
+      bread: "Bread & bakery", beverages: "Drinks", snacks: "Snacks & sweets", fruit: "Fruit & berries",
+      vegetables: "Vegetables", pantry: "Pantry & canned", condiments: "Sauces & spices", spreads: "Spreads",
+    },
   },
 };
 if (!I18N[state.lang]) state.lang = "no";
@@ -341,6 +361,54 @@ function applyLanguage() {
   btn.title = LANGS[state.lang].name;
   render();
 }
+
+/* ---------- Categories ---------- */
+// Open Food Facts categories_tags run from general to specific ("en:beverages" ... "en:yogurts"), so the
+// most specific tag is checked first. Each tag is split on "-" and matched word by word (singular or plural),
+// plus two-word pairs, which keeps "salted-butters" out of "salt" and "champagnes" out of "ham". Rule order
+// breaks ties within a tag: "fruit-yogurts" is dairy, "fruit-juices" a drink, "ice-creams" frozen,
+// "tomato-sauces" a sauce. The two-word rules come first ("peanut-butters" is not dairy).
+const CATEGORY_RULES = [
+  ["spreads", "peanut-butter nut-butter hazelnut-spread chocolate-spread"],
+  ["vegetables", "sweet-potato"],
+  ["frozen", "frozen ice"],
+  ["cheese", "cheese"],
+  ["eggs", "egg"],
+  ["dairy", "dairy dairie milk yogurt yoghurt cream butter kefir skyr quark curd"],
+  ["meat", "meat beef pork chicken poultry ham sausage bacon salami lamb burger turkey mince"],
+  ["fish", "fish seafood salmon cod tuna shrimp prawn mackerel herring sardine"],
+  ["beverages", "beverage drink juice water soda coffee tea beer wine nectar smoothie"],
+  ["snacks", "snack chocolate candy candie confectionerie biscuit cookie chip crisp"],
+  ["bread", "bread bakery roll bun baguette crispbread flatbread cracker pastrie cake"],
+  ["condiments", "sauce condiment spice dressing mayonnaise seasoning ketchup oil vinegar"],
+  ["spreads", "spread jam honey marmalade pate"],
+  ["fruit", "fruit apple banana berry berrie orange citru grape pear"],
+  ["vegetables", "vegetable potato tomato salad carrot onion cabbage legume"],
+  ["pantry", "pasta rice cereal flour grain noodle oat muesli canned"],
+].map(([cat, words]) => [cat, new Set(words.split(" "))]);
+const CATEGORY_ICONS = {
+  frozen: "🧊", cheese: "🧀", eggs: "🥚", dairy: "🥛", meat: "🥩", fish: "🐟", beverages: "🥤", snacks: "🍫",
+  bread: "🍞", condiments: "🧂", spreads: "🍯", fruit: "🍎", vegetables: "🥕", pantry: "🍝",
+};
+const DEFAULT_ICON = "🛒";
+
+function classifyCategory(tags) {
+  for (const tag of [...(tags || [])].reverse()) {
+    const forms = (w) => [w, w.replace(/s$/, ""), w.replace(/es$/, "")];   // "jams" -> "jam", "potatoes" -> "potato"
+    const tokens = tag.replace(/^[a-z]{2}:/, "").toLowerCase().split("-");
+    const words = tokens.flatMap(forms);
+    for (let k = 0; k < tokens.length - 1; k++) words.push(...forms(tokens[k + 1]).map((w) => `${tokens[k]}-${w}`));
+    for (const [cat, keys] of CATEGORY_RULES) {
+      if (words.some((w) => keys.has(w))) return cat;
+    }
+  }
+  return null;
+}
+
+const categoryLabel = (cat) => (cat && I18N[state.lang].cat[cat]) || "";
+
+// Display only: a no-break space between a number and its unit, so "600 g" never wraps between the two
+const keepUnits = (name) => name.replace(/(\d) (?=(?:kg|g|l|dl|cl|ml|stk|pk|x)\b)/gi, "$1\u00a0");
 
 /* ---------- List ---------- */
 const $ = (id) => document.getElementById(id);
@@ -402,10 +470,13 @@ function row(i) {
   const name = document.createElement("button");
   name.className = "name";
   name.dataset.action = "rename";
-  name.textContent = i.name;
-  if (i.barcode) {
+  name.textContent = keepUnits(i.name);
+  const lookup = i.barcode ? state.lookups[i.barcode] : null;
+  // Category first: if the line is too long, only the end of the barcode is cut off
+  const meta = [categoryLabel(lookup?.category), i.barcode].filter(Boolean).join(" · ");
+  if (meta) {
     const s = document.createElement("small");
-    s.textContent = i.barcode;
+    s.textContent = meta;
     name.append(s);
   }
 
@@ -422,8 +493,28 @@ function row(i) {
   del.setAttribute("aria-label", t("del"));
   del.textContent = "×";
 
-  li.append(check, name, qty, del);
+  li.append(check, thumb(lookup), name, qty, del);
   return li;
+}
+
+// Product image, or the category icon when there is none (or it fails to load).
+// Every row gets one, so names line up.
+function thumb(lookup) {
+  const icon = document.createElement("span");
+  icon.className = "thumb thumb-icon";
+  icon.setAttribute("aria-hidden", "true");
+  icon.textContent = CATEGORY_ICONS[lookup?.category] || DEFAULT_ICON;
+  if (!lookup?.image) return icon;
+
+  const img = document.createElement("img");
+  img.className = "thumb";
+  img.crossOrigin = "anonymous";   // CORS response, so the service worker can cache it for offline use
+  img.alt = "";                    // decorative: the name is right next to it
+  img.loading = "lazy";
+  img.decoding = "async";
+  img.addEventListener("error", () => img.replaceWith(icon));
+  img.src = lookup.image;
+  return img;
 }
 
 listEl.addEventListener("click", async (e) => {
@@ -439,7 +530,9 @@ listEl.addEventListener("click", async (e) => {
     case "dec": if (item.qty > 1) item.qty--; break;
     case "delete": state.items = state.items.filter((i) => i !== item); break;
     case "rename": {
-      const n = await askName({ title: t("rename"), sub: item.barcode ? t("barcode", item.barcode) : "", value: item.name });
+      const lookup = item.barcode ? state.lookups[item.barcode] : null;
+      const sub = [categoryLabel(lookup?.category), item.barcode && t("barcode", item.barcode)].filter(Boolean).join(" · ");
+      const n = await askName({ title: t("rename"), sub, value: item.name, image: lookup?.imageFull || lookup?.image });
       if (!n) return;
       item.name = n;
       if (item.barcode) state.codeMap[item.barcode] = n;   // remember the new name next time
@@ -471,11 +564,19 @@ function toast(msg, ms = 1800) {
 }
 
 /* ---------- Name dialog ---------- */
-function askName({ title, sub = "", value = "" }) {
+function askName({ title, sub = "", value = "", image = null }) {
   const dlg = $("nameDialog");
   $("dlgTitle").textContent = title;
   $("dlgSub").textContent = sub;
   $("dlgSub").hidden = !sub;
+  const img = $("dlgImage");
+  img.hidden = !image;
+  if (image) {
+    img.onerror = () => { img.hidden = true; };
+    img.src = image;
+  } else {
+    img.removeAttribute("src");
+  }
   const input = $("dlgName");
   input.value = value;
   dlg.returnValue = "";
@@ -499,7 +600,8 @@ async function lookupProduct(code) {
   const timer = setTimeout(() => ctrl.abort(), 6000);
   try {
     const url = `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}.json` +
-                `?fields=product_name,product_name_nb,product_name_no,product_name_en,brands`;
+                `?fields=product_name,product_name_nb,product_name_no,product_name_en,brands,` +
+                `image_front_small_url,image_small_url,image_front_url,image_url,categories_tags`;
     const res = await fetch(url, { signal: ctrl.signal });
     if (!res.ok) return null;
     const data = await res.json();
@@ -518,7 +620,12 @@ async function lookupProduct(code) {
       if (brand && !name.toLowerCase().includes(brand.toLowerCase())) name = `${brand} ${name}`;
       names[lang] = name;
     }
-    return names;   // { no, en }
+    // Front image in ~200 px (row) and ~400 px (rename dialog); only OFF's own image host is accepted
+    const safe = (u) => (u && u.startsWith(IMAGE_ORIGIN + "/") ? u : null);
+    names.image = safe(p.image_front_small_url || p.image_small_url);
+    names.imageFull = safe(p.image_front_url || p.image_url);
+    names.category = classifyCategory(p.categories_tags);
+    return names;   // { no, en, image, imageFull, category }
   } catch {
     return null;   // offline, timeout, etc.
   } finally {
@@ -732,8 +839,25 @@ $("closeScan").addEventListener("click", closeScanner);
 $("switchCam").addEventListener("click", switchCamera);
 document.addEventListener("visibilitychange", () => { if (document.hidden && !$("scanner").hidden) closeScanner(); });
 
+// Lookups saved before images/categories existed lack the "category" key: fetch those again for items on
+// the list (names stay as they are). Products that are no longer found are simply retried next start.
+async function refreshOldLookups() {
+  if (!navigator.onLine) return;
+  const codes = [...new Set(state.items.map((i) => i.barcode))]
+    .filter((c) => c && state.lookups[c] && !("category" in state.lookups[c]));
+  let changed = false;
+  for (const code of codes.slice(0, 20)) {
+    const fresh = await lookupProduct(code);
+    if (!fresh) continue;
+    Object.assign(state.lookups[code], { image: fresh.image, imageFull: fresh.imageFull, category: fresh.category });
+    changed = true;
+  }
+  if (changed) { save(); render(); }
+}
+
 /* ---------- Startup ---------- */
 applyLanguage();   // also renders
+refreshOldLookups();
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(console.warn));
 }

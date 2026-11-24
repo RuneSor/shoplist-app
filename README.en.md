@@ -31,6 +31,13 @@ The interface is available in Norwegian (default) and English.
 - A flag button (🇳🇴/🇬🇧) in the top right switches language. The choice controls both the interface text
   and which product name is fetched from Open Food Facts (Norwegian: `nb → no → default → en`,
   English: `en → default → nb → no`).
+- Scanned items get a small product image from Open Food Facts when one exists. The service worker caches
+  the images (max 300), so they also show offline in the store. Tap the name to see the image in full size
+  in the rename dialog.
+- Scanned items get a category (e.g. "Dairy", "Meat", "Fruit & berries") from Open Food Facts'
+  `categories_tags`. It is shown before the barcode under the name and follows the language setting. Without
+  an image the category icon is shown (🥛 🥩 🍞 …), and 🛒 for items without a category. Lookups saved before
+  categories existed are refreshed in the background at startup.
 - Unknown barcodes get a name you type in. The barcode and name are remembered for next time.
 - Adding the same item twice increases the quantity. A typed "Milk" and a scanned "Milk" are merged,
   but two different barcodes never are.
@@ -41,7 +48,7 @@ The interface is available in Norwegian (default) and English.
 | File | Contents |
 |---|---|
 | `index.html` | The whole app: CSS, markup and JS |
-| `sw.js` | Service worker. The page is fetched network-first, everything else cache-first. Open Food Facts bypasses the cache. |
+| `sw.js` | Service worker. The page is fetched network-first, everything else cache-first. Product images live in their own cache (`handleliste-images-v1`), kept across updates. Product lookups bypass the cache. |
 | `manifest.webmanifest` | PWA manifest (standalone, portrait) |
 | `icons/` | 192, 512 (also maskable) and apple-touch-icon |
 | `screenshots/` | README screenshots (not cached by the service worker) |
@@ -55,7 +62,7 @@ All paths are relative, so the app can live in a subfolder (e.g. GitHub Pages).
 |---|---|
 | `handleliste.items_v1` | The list: `{ id, name, barcode, qty, done }[]` |
 | `handleliste.barcodes_v1` | Barcode → name the user typed or renamed (takes priority over lookups) |
-| `handleliste.lookups_v1` | Barcode → `{ no, en }` from Open Food Facts, so switching language needs no new lookup |
+| `handleliste.lookups_v1` | Barcode → `{ no, en, image, imageFull, category }` from Open Food Facts (names, 200/400 px image, category key), so switching language needs no new lookup |
 | `handleliste.lang_v1` | Selected language: `no` or `en` |
 | `handleliste.camera_v1` | Camera picked with ⟳ (`deviceId`). Missing = automatic choice |
 
@@ -68,7 +75,8 @@ automatically at startup.
 
 ## When updating
 Bump the `CACHE` version at the top of `sw.js` (e.g. from `handleliste-v4` to `handleliste-v5`) on every
-change. Otherwise iOS may keep showing the old version. Close and reopen the app (sometimes twice) to
+change. Otherwise iOS may keep showing the old version. The image cache (`IMAGE_CACHE`) is only bumped for
+incompatible changes. Close and reopen the app (sometimes twice) to
 get the new version.
 
 ## Testing
@@ -103,6 +111,9 @@ of elements with `data-i18n`, `data-i18n-placeholder` and `data-i18n-aria`.
 
 New language: add an entry to `LANGS` and one to `I18N` with the same keys as `no`, and add the name
 fields to the order in `lookupProduct()`. The button cycles through the languages in order.
+
+Category names live under `cat` in `I18N`, and the icons in `CATEGORY_ICONS`. The rules that sort Open Food
+Facts tags into categories are `CATEGORY_RULES`. The most specific tag is checked first.
 
 Items already on the list keep the name they were given when added.
 The manifest (the name under the home screen icon) is static and in Norwegian.
