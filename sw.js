@@ -1,5 +1,5 @@
 // Bump the version on every change, otherwise iOS may keep serving the old files from cache.
-const CACHE = "handleliste-v8";
+const CACHE = "handleliste-v9";
 // Product images live in their own cache so they survive app updates (shown offline in the store)
 const IMAGE_CACHE = "handleliste-images-v1";
 const IMAGE_ORIGIN = "https://images.openfoodfacts.org";

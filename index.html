@@ -15,12 +15,13 @@
   :root {
     --bg: #f4f5f1; --card: #ffffff; --text: #1c231f; --muted: #6d766f;
     --line: #e3e6e0; --accent: #2f7d4f; --accent-ink: #ffffff; --danger: #b3412f;
-    --radius: 14px;
+    --radius: 14px; --pop: #ffffff; --pop-active: #e8f1eb; --pop-line: #e3e6e0;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #121513; --card: #1c211e; --text: #e9ece9; --muted: #8e978f;
       --line: #2a302c; --accent: #4fa374; --accent-ink: #0d140f; --danger: #e0715d;
+      --pop: #2b332e; --pop-active: #36443b; --pop-line: #3d4842;
     }
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -54,14 +55,19 @@
   }
 
   /* Suggestions from previously scanned items, under the add field */
+  /* Its own raised surface with an accent border, and the list behind is dimmed, so the two never blend */
   #suggest { position: absolute; left: 0; right: 0; top: calc(100% + 6px); z-index: 20;
-    list-style: none; margin: 0; padding: 0; background: var(--card); border: 1px solid var(--line);
-    border-radius: var(--radius); overflow: hidden; box-shadow: 0 12px 30px rgba(0,0,0,.18); }
+    list-style: none; margin: 0; padding: 0; background: var(--pop); border: 1.5px solid var(--accent);
+    border-radius: var(--radius); overflow: hidden; box-shadow: 0 14px 36px rgba(0,0,0,.35); }
   #suggest[hidden] { display: none; }
+  /* Heading from the (translated) aria-label */
+  #suggest::before { content: attr(aria-label); display: block; padding: 8px 12px 6px; font-size: 12px;
+    font-weight: 600; color: var(--accent); text-transform: uppercase; letter-spacing: .05em; }
   .sug { display: flex; align-items: center; gap: 10px; padding: 8px 12px; min-height: 52px;
-    border-top: 1px solid var(--line); cursor: pointer; }
-  .sug:first-child { border-top: 0; }
-  .sug.active, .sug:active { background: var(--line); }
+    border-top: 1px solid var(--pop-line); cursor: pointer; }
+  .sug.active, .sug:active { background: var(--pop-active); }
+  #list, #empty, #clearDone { transition: opacity .15s; }
+  body.suggesting #list, body.suggesting #empty, body.suggesting #clearDone { opacity: .3; }
   .sug-name { flex: 1; min-width: 0; }
   .sug-name small { display: block; color: var(--muted); font-size: 12px;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -607,6 +613,7 @@ function renderSuggestions() {
   }));
   const open = suggestions.length > 0;
   suggestEl.hidden = !open;
+  document.body.classList.toggle("suggesting", open);
   addInput.setAttribute("aria-expanded", String(open));
   if (activeSug >= 0) addInput.setAttribute("aria-activedescendant", `sug-${activeSug}`);
   else addInput.removeAttribute("aria-activedescendant");
