@@ -15,12 +15,13 @@
   :root {
     --bg: #f4f5f1; --card: #ffffff; --text: #1c231f; --muted: #6d766f;
     --line: #e3e6e0; --accent: #2f7d4f; --accent-ink: #ffffff; --danger: #b3412f;
-    --radius: 14px;
+    --radius: 14px; --pop: #ffffff; --pop-active: #e8f1eb; --pop-line: #e3e6e0;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #121513; --card: #1c211e; --text: #e9ece9; --muted: #8e978f;
       --line: #2a302c; --accent: #4fa374; --accent-ink: #0d140f; --danger: #e0715d;
+      --pop: #2b332e; --pop-active: #36443b; --pop-line: #3d4842;
     }
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -42,7 +43,7 @@
 
   main { padding: 0 14px calc(env(safe-area-inset-bottom) + 110px); max-width: 640px; margin: 0 auto; }
 
-  #addForm { display: flex; gap: 8px; margin: 4px 0 14px; }
+  #addForm { position: relative; display: flex; gap: 8px; margin: 4px 0 14px; }
   #addInput {
     flex: 1; min-width: 0; font: inherit; color: var(--text); background: var(--card);
     border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; outline: none;
@@ -52,6 +53,24 @@
     border: 0; border-radius: var(--radius); padding: 0 16px;
     background: var(--card); border: 1px solid var(--line); font-weight: 600;
   }
+
+  /* Suggestions from previously scanned items, under the add field */
+  /* Its own raised surface with an accent border, and the list behind is dimmed, so the two never blend */
+  #suggest { position: absolute; left: 0; right: 0; top: calc(100% + 6px); z-index: 20;
+    list-style: none; margin: 0; padding: 0; background: var(--pop); border: 1.5px solid var(--accent);
+    border-radius: var(--radius); overflow: hidden; box-shadow: 0 14px 36px rgba(0,0,0,.35); }
+  #suggest[hidden] { display: none; }
+  /* Heading from the (translated) aria-label */
+  #suggest::before { content: attr(aria-label); display: block; padding: 8px 12px 6px; font-size: 12px;
+    font-weight: 600; color: var(--accent); text-transform: uppercase; letter-spacing: .05em; }
+  .sug { display: flex; align-items: center; gap: 10px; padding: 8px 12px; min-height: 52px;
+    border-top: 1px solid var(--pop-line); cursor: pointer; }
+  .sug.active, .sug:active { background: var(--pop-active); }
+  #list, #empty, #clearDone { transition: opacity .15s; }
+  body.suggesting #list, body.suggesting #empty, body.suggesting #clearDone { opacity: .3; }
+  .sug-name { flex: 1; min-width: 0; }
+  .sug-name small { display: block; color: var(--muted); font-size: 12px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
   #list { list-style: none; margin: 0; padding: 0; background: var(--card);
     border-radius: var(--radius); overflow: hidden; border: 1px solid var(--line); }
@@ -88,6 +107,9 @@
     border-top: 1px solid var(--line); text-transform: uppercase; letter-spacing: .05em; }
 
   #empty { text-align: center; color: var(--muted); margin: 48px 20px; }
+  #version { margin: 28px 0 0; text-align: center; color: var(--muted); font-size: 11px; opacity: .7; }
+  #version:empty { display: none; }
+  #clearDone[hidden] { display: none; }   /* display: block would otherwise override [hidden] */
   #clearDone { display: block; margin: 16px auto 0; background: none; border: 0;
     color: var(--danger); font-weight: 600; padding: 10px; }
 
@@ -173,13 +195,16 @@
 <main>
   <form id="addForm" autocomplete="off">
     <input id="addInput" placeholder="Legg til vare…" enterkeyhint="done" aria-label="Ny vare"
-           data-i18n-placeholder="addPlaceholder" data-i18n-aria="addAria">
+           data-i18n-placeholder="addPlaceholder" data-i18n-aria="addAria"
+           role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="suggest">
     <button type="submit" data-i18n="add">Legg til</button>
+    <ul id="suggest" role="listbox" hidden aria-label="Tidligere skannede varer" data-i18n-aria="suggestAria"></ul>
   </form>
 
   <ul id="list"></ul>
   <p id="empty"><span data-i18n="empty1">Listen er tom.</span><br><span data-i18n="empty2">Skann en strekkode eller skriv inn en vare.</span></p>
   <button id="clearDone" hidden data-i18n="clearDone">Fjern avkryssede</button>
+  <p id="version"></p>
 </main>
 
 <button id="scanBtn" class="fab" aria-label="Skann strekkode" data-i18n-aria="scanAria">
@@ -290,6 +315,7 @@ const I18N = {
   no: {
     title: "Handleliste",
     addPlaceholder: "Legg til vare…", addAria: "Ny vare", add: "Legg til",
+    suggestAria: "Tidligere skannede varer",
     empty1: "Listen er tom.", empty2: "Skann en strekkode eller skriv inn en vare.",
     clearDone: "Fjern avkryssede", scan: "Skann vare", scanAria: "Skann strekkode",
     scanFrame: "Hold strekkoden i rammen", scanDone: "Ferdig",
@@ -304,7 +330,7 @@ const I18N = {
     noLib: "Skanneren lastet ikke – sjekk nettet og prøv igjen",
     noCamPermission: "Appen fikk ikke bruke kameraet", noCam: "Klarte ikke å starte kameraet",
     langAria: (to) => `Språk: norsk. Bytt til ${to}`,
-    switchCam: "Bytt kamera",
+    switchCam: "Bytt kamera", version: (v) => `Versjon ${v}`,
     cat: {
       frozen: "Frysevarer", cheese: "Ost", eggs: "Egg", dairy: "Meieri", meat: "Kjøtt", fish: "Fisk og sjømat",
       bread: "Brød og bakevarer", beverages: "Drikke", snacks: "Snacks og godteri", fruit: "Frukt og bær",
@@ -314,6 +340,7 @@ const I18N = {
   en: {
     title: "Shopping List",
     addPlaceholder: "Add item…", addAria: "New item", add: "Add",
+    suggestAria: "Previously scanned items",
     empty1: "Your list is empty.", empty2: "Scan a barcode or type an item.",
     clearDone: "Clear checked items", scan: "Scan item", scanAria: "Scan barcode",
     scanFrame: "Hold the barcode inside the frame", scanDone: "Done",
@@ -328,7 +355,7 @@ const I18N = {
     noLib: "The scanner didn’t load – check your connection and try again",
     noCamPermission: "The app wasn’t allowed to use the camera", noCam: "Couldn’t start the camera",
     langAria: (to) => `Language: English. Switch to ${to}`,
-    switchCam: "Switch camera",
+    switchCam: "Switch camera", version: (v) => `Version ${v}`,
     cat: {
       frozen: "Frozen", cheese: "Cheese", eggs: "Eggs", dairy: "Dairy", meat: "Meat", fish: "Fish & seafood",
       bread: "Bread & bakery", beverages: "Drinks", snacks: "Snacks & sweets", fruit: "Fruit & berries",
@@ -360,6 +387,17 @@ function applyLanguage() {
   btn.setAttribute("aria-label", t("langAria", LANGS[nextLang()].name));
   btn.title = LANGS[state.lang].name;
   render();
+  showVersion();
+}
+
+// The version is the number in CACHE in sw.js ("handleliste-v9" -> 9), read from the cache the service worker
+// has downloaded, so it also shows whether the phone has picked up a new version. Nothing is shown without one.
+async function showVersion() {
+  let v = 0;
+  try {
+    for (const key of await caches.keys()) v = Math.max(v, Number(key.match(/^handleliste-v(\d+)$/)?.[1] || 0));
+  } catch {}   // no Cache API (file://, private mode)
+  $("version").textContent = v ? t("version", v) : "";
 }
 
 /* ---------- Categories ---------- */
@@ -542,10 +580,109 @@ listEl.addEventListener("click", async (e) => {
   save(); render();
 });
 
+/* ---------- Search in previously scanned items ---------- */
+// The history is every barcode in codeMap and lookups; no storage of its own. The name is picked as in
+// onCode (the user's own name wins), and both languages are searched. Items that would merge with an open
+// item on the list are left out: they are already there.
+const SUGGEST_MIN = 2, SUGGEST_MAX = 6;
+const addInput = $("addInput"), suggestEl = $("suggest");
+let suggestions = [], activeSug = -1;
+
+function searchHistory(query) {
+  const q = query.trim().toLowerCase();
+  if (q.length < SUGGEST_MIN) return [];
+  const codes = new Set([...Object.keys(state.codeMap), ...Object.keys(state.lookups)]);
+  const hits = [];
+  for (const code of codes) {
+    const lookup = state.lookups[code] || null;
+    const name = state.codeMap[code] || lookup?.[state.lang] || lookup?.no || lookup?.en;
+    if (!name || findOpenMatch(name, code)) continue;
+    const texts = [name, lookup?.no, lookup?.en].filter(Boolean).map((s) => s.toLowerCase());
+    // 0: the name starts with the query, 1: a word does, 2: it is somewhere in the name
+    const rank = texts.some((s) => s.startsWith(q)) ? 0
+      : texts.some((s) => s.split(/[\s,.\-–()]+/).some((w) => w.startsWith(q))) ? 1
+      : texts.some((s) => s.includes(q)) ? 2 : -1;
+    if (rank >= 0) hits.push({ code, name, lookup, rank });
+  }
+  const locale = state.lang === "no" ? "nb" : state.lang;
+  return hits.sort((a, b) => a.rank - b.rank || a.name.localeCompare(b.name, locale)).slice(0, SUGGEST_MAX);
+}
+
+function renderSuggestions() {
+  suggestEl.replaceChildren(...suggestions.map((h, n) => {
+    const li = document.createElement("li");
+    li.className = "sug" + (n === activeSug ? " active" : "");
+    li.id = `sug-${n}`;
+    li.setAttribute("role", "option");
+    li.setAttribute("aria-selected", String(n === activeSug));
+    li.dataset.index = n;
+    const text = document.createElement("div");
+    text.className = "sug-name";
+    text.textContent = keepUnits(h.name);
+    const meta = [categoryLabel(h.lookup?.category), h.code].filter(Boolean).join(" · ");
+    const s = document.createElement("small");
+    s.textContent = meta;
+    text.append(s);
+    li.append(thumb(h.lookup), text);
+    return li;
+  }));
+  const open = suggestions.length > 0;
+  suggestEl.hidden = !open;
+  document.body.classList.toggle("suggesting", open);
+  addInput.setAttribute("aria-expanded", String(open));
+  if (activeSug >= 0) addInput.setAttribute("aria-activedescendant", `sug-${activeSug}`);
+  else addInput.removeAttribute("aria-activedescendant");
+}
+
+function updateSuggestions() {
+  suggestions = searchHistory(addInput.value);
+  activeSug = -1;
+  renderSuggestions();
+}
+
+function closeSuggestions() {
+  suggestions = [];
+  activeSug = -1;
+  renderSuggestions();
+}
+
+function pickSuggestion(n) {
+  const h = suggestions[n];
+  if (!h) return;
+  const r = addItem(h.name, h.code);   // with the barcode, so it gets the image and category
+  addInput.value = "";
+  closeSuggestions();
+  addInput.focus();   // keep the keyboard up for the next item
+  toast(r === "more" ? t("oneMore", h.name) : t("added", h.name));
+}
+
+addInput.addEventListener("input", updateSuggestions);
+addInput.addEventListener("focus", updateSuggestions);
+// Delayed, so a tap on a suggestion is not lost when the field loses focus first
+addInput.addEventListener("blur", () => setTimeout(() => {
+  if (document.activeElement !== addInput) closeSuggestions();
+}, 150));
+addInput.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") { closeSuggestions(); return; }
+  if (!suggestions.length || (e.key !== "ArrowDown" && e.key !== "ArrowUp")) return;
+  e.preventDefault();
+  const step = e.key === "ArrowDown" ? 1 : -1;
+  const slots = suggestions.length + 1;   // the options plus "none" (-1)
+  activeSug = (activeSug + 1 + step + slots) % slots - 1;
+  renderSuggestions();
+});
+suggestEl.addEventListener("pointerdown", (e) => e.preventDefault());   // keep focus in the field
+suggestEl.addEventListener("click", (e) => {
+  const li = e.target.closest(".sug");
+  if (li) pickSuggestion(Number(li.dataset.index));
+});
+
 $("addForm").addEventListener("submit", (e) => {
   e.preventDefault();
-  const input = $("addInput");
-  if (addItem(input.value)) input.value = "";
+  // Enter adds what was typed, unless a suggestion was picked with the arrow keys
+  if (activeSug >= 0) { pickSuggestion(activeSug); return; }
+  if (addItem(addInput.value)) addInput.value = "";
+  closeSuggestions();
 });
 
 $("clearDone").addEventListener("click", () => {
@@ -859,7 +996,8 @@ async function refreshOldLookups() {
 applyLanguage();   // also renders
 refreshOldLookups();
 if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(console.warn));
+  window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").then(showVersion).catch(console.warn));
+  navigator.serviceWorker.addEventListener("controllerchange", showVersion);
 }
 </script>
 </body>
