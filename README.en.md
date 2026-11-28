@@ -13,12 +13,14 @@ The interface is available in Norwegian (default) and English.
     <td><img src="screenshots/list-no-dark.png" width="200" alt="Dark mode"></td>
     <td><img src="screenshots/list-en-light.png" width="200" alt="English"></td>
     <td><img src="screenshots/unknown-item-no-dark.png" width="200" alt="Unknown barcode"></td>
+    <td><img src="screenshots/search-no-light.png" width="200" alt="Search previous items"></td>
   </tr>
   <tr>
     <td align="center">Light mode</td>
     <td align="center">Dark mode</td>
     <td align="center">English</td>
     <td align="center">Unknown barcode</td>
+    <td align="center">Search previous items</td>
   </tr>
 </table>
 
@@ -38,6 +40,11 @@ The interface is available in Norwegian (default) and English.
   `categories_tags`. It is shown before the barcode under the name and follows the language setting. Without
   an image the category icon is shown (🥛 🥩 🍞 …), and 🛒 for items without a category. Lookups saved before
   categories existed are refreshed in the background at startup.
+- While you type in the field, up to 6 matching previously scanned items are shown (from 2 characters,
+  both languages, brand included). Items whose name starts with the text come first. Items already on the
+  list are hidden. Tap a match to add it with its barcode, image and category. Enter adds what you typed.
+  The history is the barcodes in `barcodes_v1` and `lookups_v1`, so search works offline. Items typed in
+  without a barcode are not included.
 - Unknown barcodes get a name you type in. The barcode and name are remembered for next time.
 - Adding the same item twice increases the quantity. A typed "Milk" and a scanned "Milk" are merged,
   but two different barcodes never are.

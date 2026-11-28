@@ -13,12 +13,14 @@ Grensesnittet finnes på norsk (standard) og engelsk.
     <td><img src="screenshots/list-no-dark.png" width="200" alt="Mørk modus"></td>
     <td><img src="screenshots/list-en-light.png" width="200" alt="Engelsk"></td>
     <td><img src="screenshots/unknown-item-no-dark.png" width="200" alt="Ukjent strekkode"></td>
+    <td><img src="screenshots/search-no-light.png" width="200" alt="Søk i tidligere varer"></td>
   </tr>
   <tr>
     <td align="center">Lys modus</td>
     <td align="center">Mørk modus</td>
     <td align="center">Engelsk</td>
     <td align="center">Ukjent strekkode</td>
+    <td align="center">Søk i tidligere varer</td>
   </tr>
 </table>
 
@@ -38,6 +40,11 @@ Grensesnittet finnes på norsk (standard) og engelsk.
   Open Food Facts. Den vises før strekkoden under navnet og følger språkvalget. Uten bilde vises et ikon for
   kategorien (🥛 🥩 🍞 …), og 🛒 for varer uten kategori. Oppslag lagret før kategoriene fantes, oppdateres i
   bakgrunnen ved oppstart.
+- Når du skriver i feltet, vises opptil 6 tidligere skannede varer som passer (fra 2 tegn, begge språk,
+  også merket). Treff der navnet starter med teksten kommer først. Varer som allerede er på listen skjules.
+  Trykk på et treff for å legge det til med strekkode, bilde og kategori. Enter legger til det du har skrevet.
+  Historikken er strekkodene i `barcodes_v1` og `lookups_v1`, så søket virker offline. Varer som er skrevet
+  inn uten strekkode er ikke med.
 - Ukjente strekkoder får et navn du skriver inn. Strekkoden og navnet huskes til neste gang.
 - Samme vare to ganger gir høyere antall. En skrevet «Melk» og en skannet «Melk» slås sammen, men
   to ulike strekkoder gjør aldri det.
