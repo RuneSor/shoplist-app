@@ -83,7 +83,8 @@ automatisk ved oppstart.
 ## Viktig ved oppdatering
 Øk `CACHE`-versjonen øverst i `sw.js` (f.eks. fra `handleliste-v4` til `handleliste-v5`) ved hver endring. Ellers kan iOS
 fortsette å vise gammel versjon. Bildecachen (`IMAGE_CACHE`) skal ikke økes, bare ved inkompatible endringer.
-Lukk og åpne appen (noen ganger to ganger) for å få ny versjon.
+Lukk og åpne appen (noen ganger to ganger) for å få ny versjon. Nummeret nederst i appen («Versjon 10») er tallet i
+`CACHE`, lest fra cachen service workeren har lastet ned, så det viser om telefonen har fått den nye versjonen.
 
 ## Test
 - Lokalt: `python3 -m http.server 8000` og åpne http://localhost:8000. Kameraet virker på `localhost`.

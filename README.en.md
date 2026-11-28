@@ -84,7 +84,8 @@ automatically at startup.
 Bump the `CACHE` version at the top of `sw.js` (e.g. from `handleliste-v4` to `handleliste-v5`) on every
 change. Otherwise iOS may keep showing the old version. The image cache (`IMAGE_CACHE`) is only bumped for
 incompatible changes. Close and reopen the app (sometimes twice) to
-get the new version.
+get the new version. The number at the bottom of the app ("Version 10") is the number in `CACHE`, read from
+the cache the service worker has downloaded, so it shows whether the phone has picked up the new version.
 
 ## Testing
 - Locally: `python3 -m http.server 8000` and open http://localhost:8000. The camera works on `localhost`.

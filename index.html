@@ -107,6 +107,9 @@
     border-top: 1px solid var(--line); text-transform: uppercase; letter-spacing: .05em; }
 
   #empty { text-align: center; color: var(--muted); margin: 48px 20px; }
+  #version { margin: 28px 0 0; text-align: center; color: var(--muted); font-size: 11px; opacity: .7; }
+  #version:empty { display: none; }
+  #clearDone[hidden] { display: none; }   /* display: block would otherwise override [hidden] */
   #clearDone { display: block; margin: 16px auto 0; background: none; border: 0;
     color: var(--danger); font-weight: 600; padding: 10px; }
 
@@ -201,6 +204,7 @@
   <ul id="list"></ul>
   <p id="empty"><span data-i18n="empty1">Listen er tom.</span><br><span data-i18n="empty2">Skann en strekkode eller skriv inn en vare.</span></p>
   <button id="clearDone" hidden data-i18n="clearDone">Fjern avkryssede</button>
+  <p id="version"></p>
 </main>
 
 <button id="scanBtn" class="fab" aria-label="Skann strekkode" data-i18n-aria="scanAria">
@@ -326,7 +330,7 @@ const I18N = {
     noLib: "Skanneren lastet ikke – sjekk nettet og prøv igjen",
     noCamPermission: "Appen fikk ikke bruke kameraet", noCam: "Klarte ikke å starte kameraet",
     langAria: (to) => `Språk: norsk. Bytt til ${to}`,
-    switchCam: "Bytt kamera",
+    switchCam: "Bytt kamera", version: (v) => `Versjon ${v}`,
     cat: {
       frozen: "Frysevarer", cheese: "Ost", eggs: "Egg", dairy: "Meieri", meat: "Kjøtt", fish: "Fisk og sjømat",
       bread: "Brød og bakevarer", beverages: "Drikke", snacks: "Snacks og godteri", fruit: "Frukt og bær",
@@ -351,7 +355,7 @@ const I18N = {
     noLib: "The scanner didn’t load – check your connection and try again",
     noCamPermission: "The app wasn’t allowed to use the camera", noCam: "Couldn’t start the camera",
     langAria: (to) => `Language: English. Switch to ${to}`,
-    switchCam: "Switch camera",
+    switchCam: "Switch camera", version: (v) => `Version ${v}`,
     cat: {
       frozen: "Frozen", cheese: "Cheese", eggs: "Eggs", dairy: "Dairy", meat: "Meat", fish: "Fish & seafood",
       bread: "Bread & bakery", beverages: "Drinks", snacks: "Snacks & sweets", fruit: "Fruit & berries",
@@ -383,6 +387,17 @@ function applyLanguage() {
   btn.setAttribute("aria-label", t("langAria", LANGS[nextLang()].name));
   btn.title = LANGS[state.lang].name;
   render();
+  showVersion();
+}
+
+// The version is the number in CACHE in sw.js ("handleliste-v9" -> 9), read from the cache the service worker
+// has downloaded, so it also shows whether the phone has picked up a new version. Nothing is shown without one.
+async function showVersion() {
+  let v = 0;
+  try {
+    for (const key of await caches.keys()) v = Math.max(v, Number(key.match(/^handleliste-v(\d+)$/)?.[1] || 0));
+  } catch {}   // no Cache API (file://, private mode)
+  $("version").textContent = v ? t("version", v) : "";
 }
 
 /* ---------- Categories ---------- */
@@ -981,7 +996,8 @@ async function refreshOldLookups() {
 applyLanguage();   // also renders
 refreshOldLookups();
 if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(console.warn));
+  window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").then(showVersion).catch(console.warn));
+  navigator.serviceWorker.addEventListener("controllerchange", showVersion);
 }
 </script>
 </body>
